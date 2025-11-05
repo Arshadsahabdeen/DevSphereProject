@@ -1,0 +1,266 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Socket.io Test (updated)</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 16px; }
+    input, button { margin: 4px 6px 6px 0; }
+    #log { margin-top: 12px; list-style: none; padding: 0; max-width: 900px; }
+    .msg { padding: 8px; border-radius: 6px; margin-bottom: 8px; background: #f3f3f3; display: flex; justify-content: space-between; align-items: center; }
+    .meta { font-size: 12px; color: #666; margin-left: 8px; }
+    .controls button { margin-left: 6px; }
+    .small { font-size: 12px; color: #444; }
+  </style>
+</head>
+<body>
+  <h3>Socket.io Test (updated)</h3>
+
+  <div>
+    <input id="token" placeholder="JWT token" size="70"/>
+    <input id="project" placeholder="Project ID" />
+    <button id="connectBtn">Connect & Auth</button>
+    <button id="joinBtn">Join Room</button>
+    <button id="leaveBtn">Leave Room</button>
+  </div>
+
+  <div style="margin-top:8px;">
+    <input id="msg" placeholder="message" size="80"/>
+    <button id="sendBtn">Send</button>
+    <span id="typingIndicator" class="small" style="margin-left:8px;"></span>
+  </div>
+
+  <ul id="log"></ul>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    // change URL if your server uses a different host/port
+    const socket = io('http://localhost:5000', { autoConnect: false, transports: ['websocket','polling'] });
+
+    const tokenInput = document.getElementById('token');
+    const projectInput = document.getElementById('project');
+    const connectBtn = document.getElementById('connectBtn');
+    const joinBtn = document.getElementById('joinBtn');
+    const leaveBtn = document.getElementById('leaveBtn');
+    const sendBtn = document.getElementById('sendBtn');
+    const msgInput = document.getElementById('msg');
+    const logEl = document.getElementById('log');
+    const typingIndicator = document.getElementById('typingIndicator');
+
+    let currentProject = null;
+    let myUserId = null; // set after authenticated
+
+    const log = (el) => logEl.prepend(el);
+
+    const createLogItem = (text) => {
+      const li = document.createElement('li');
+      li.textContent = text;
+      return li;
+    };
+
+    // Render message object into DOM (prepend)
+    const renderMessage = (m) => {
+      // m: populated message object from server with _id, content, sender, project, createdAt, deliveredTo, readBy, deleted
+      const li = document.createElement('li');
+      li.className = 'msg';
+      li.dataset.messageId = m._id;
+
+      const left = document.createElement('div');
+      const senderName = m.sender?.name || (m.sender?.email || 'Unknown');
+      const time = new Date(m.createdAt).toLocaleTimeString();
+      left.innerHTML = `<strong>${senderName}</strong> <span class="meta">${time}</span><div>${m.deleted ? '<em>(deleted)</em>' : (m.content || '')}</div>`;
+
+      const right = document.createElement('div');
+      right.className = 'controls';
+
+      // delivered/read counts
+      const deliveredCount = (m.deliveredTo || []).length;
+      const readCount = (m.readBy || []).length;
+      const stats = document.createElement('div');
+      stats.className = 'small';
+      stats.textContent = `Delivered: ${deliveredCount} • Read: ${readCount}`;
+      right.appendChild(stats);
+
+      // Mark read button
+      const readBtn = document.createElement('button');
+      readBtn.textContent = 'Mark read';
+      readBtn.onclick = () => {
+        socket.emit('read', { projectId: m.project, messageId: m._id });
+      };
+      right.appendChild(readBtn);
+
+      // Delete button (enable if you are sender)
+      const delBtn = document.createElement('button');
+      delBtn.textContent = 'Delete';
+      delBtn.onclick = () => {
+        socket.emit('deleteMessage', { projectId: m.project, messageId: m._id });
+      };
+      // show delete only if sender id matches (or always show; server will check)
+      if (m.sender && m.sender._id && myUserId && m.sender._id.toString() === myUserId.toString()) {
+        right.appendChild(delBtn);
+      } else {
+        // optionally still allow and server will return not authorized
+        // right.appendChild(delBtn);
+      }
+
+      li.appendChild(left);
+      li.appendChild(right);
+
+      // prepend to log (most recent first)
+      logEl.prepend(li);
+    };
+
+    // Connect & authenticate
+    connectBtn.onclick = () => {
+      if (!tokenInput.value.trim()) {
+        alert('Paste a valid JWT token in the token field first');
+        return;
+      }
+      socket.connect();
+      const token = tokenInput.value.trim();
+      socket.emit('authenticate', { token });
+    };
+
+    socket.on('connect', () => {
+      log(createLogItem('Socket connected: ' + socket.id));
+    });
+    socket.on('disconnect', (r) => {
+      log(createLogItem('Socket disconnected: ' + (r || 'client side')));
+      myUserId = null;
+    });
+
+    socket.on('authenticated', (data) => {
+      myUserId = data.id;
+      log(createLogItem('Authenticated: ' + JSON.stringify(data)));
+    });
+    socket.on('unauthorized', () => {
+      log(createLogItem('Unauthorized — token invalid'));
+    });
+
+    // events for room actions
+    joinBtn.onclick = () => {
+      const projectId = projectInput.value.trim();
+      if (!projectId) { alert('Enter project id'); return; }
+      currentProject = projectId;
+      socket.emit('joinRoom', { projectId });
+      log(createLogItem('Joining room: ' + projectId));
+      // optionally fetch recent message history via REST
+      fetchMessages(projectId);
+    };
+
+    leaveBtn.onclick = () => {
+      if (!currentProject) return;
+      socket.emit('leaveRoom', { projectId: currentProject });
+      log(createLogItem('Left room: ' + currentProject));
+      currentProject = null;
+    };
+
+    // when receiving server message, render and auto-ack delivered
+    socket.on('message', (m) => {
+      renderMessage(m);
+      try {
+        // emit delivered ack immediately
+        socket.emit('delivered', { projectId: m.project, messageId: m._id });
+      } catch (e) { /** ignore */ }
+    });
+
+    // updates from other clients about delivered/read/deleted
+    socket.on('deliveredUpdate', ({ messageId, userId }) => {
+      const el = document.querySelector(`li[data-message-id="${messageId}"] .small`);
+      if (el) {
+        // quick naive update: increment delivered count displayed (re-render fetch would be better)
+        const parts = el.textContent.split('•');
+        if (parts.length >= 1) {
+          // Delivered: X • Read: Y
+          const readPart = parts[1] || 'Read: 0';
+          const newDelivered = (parseInt(parts[0].replace(/\D/g,'')) || 0) + 1;
+          el.textContent = `Delivered: ${newDelivered} • ${readPart.trim()}`;
+        }
+      }
+      log(createLogItem(`deliveredUpdate: msg=${messageId} user=${userId}`));
+    });
+
+    socket.on('readUpdate', ({ messageId, userId }) => {
+      const el = document.querySelector(`li[data-message-id="${messageId}"] .small`);
+      if (el) {
+        const parts = el.textContent.split('•');
+        const deliveredPart = parts[0] || 'Delivered: 0';
+        const newRead = (parseInt(parts[1]?.replace(/\D/g,'')) || 0) + 1;
+        el.textContent = `${deliveredPart.trim()} • Read: ${newRead}`;
+      }
+      log(createLogItem(`readUpdate: msg=${messageId} user=${userId}`));
+    });
+
+    socket.on('readBulk', ({ projectId, userId, upTo }) => {
+      log(createLogItem(`readBulk: upTo=${upTo} by ${userId}`));
+    });
+
+    socket.on('messageDeleted', ({ messageId }) => {
+      const li = document.querySelector(`li[data-message-id="${messageId}"]`);
+      if (li) {
+        // mark deleted visually
+        const left = li.querySelector('div');
+        if (left) left.innerHTML = `<em>(deleted)</em>`;
+      }
+      log(createLogItem(`messageDeleted: ${messageId}`));
+    });
+
+    socket.on('userJoined', (u) => log(createLogItem('User joined: ' + JSON.stringify(u))));
+    socket.on('typing', (t) => {
+      if (t.isTyping) {
+        typingIndicator.textContent = `${t.name || 'Someone'} is typing...`;
+      } else {
+        typingIndicator.textContent = '';
+      }
+    });
+
+    // Send message button
+    sendBtn.onclick = () => {
+      const projectId = projectInput.value.trim();
+      if (!projectId) { alert('Enter project id'); return; }
+      const content = msgInput.value.trim();
+      if (!content) return;
+      socket.emit('sendMessage', { projectId, content });
+      log(createLogItem('Sent: ' + content));
+      msgInput.value = '';
+    };
+
+    // Typing indicator logic
+    let typingTimeout = null;
+    msgInput.addEventListener('input', () => {
+      const projectId = projectInput.value.trim();
+      if (!projectId) return;
+      socket.emit('typing', { projectId, isTyping: true });
+      if (typingTimeout) clearTimeout(typingTimeout);
+      typingTimeout = setTimeout(() => {
+        socket.emit('typing', { projectId, isTyping: false });
+      }, 900);
+    });
+
+    // helper: fetch recent messages via REST (paginated)
+    async function fetchMessages(projectId, page=1, limit=50) {
+      const token = tokenInput.value.trim();
+      try {
+        const res = await fetch(`/api/projects/${projectId}/messages?limit=${limit}&page=${page}`, {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!res.ok) {
+          log(createLogItem('Failed to fetch messages: ' + res.status));
+          return;
+        }
+        const data = await res.json();
+        // clear existing
+        log(createLogItem(`Fetched ${data.messages.length} messages (page ${data.meta.page}/${data.meta.pages})`));
+        // append oldest first (data.messages already sorted asc)
+        data.messages.forEach(m => renderMessage(m));
+      } catch (err) {
+        log(createLogItem('fetchMessages error: ' + err.message));
+      }
+    }
+
+    // If your server is on another origin you may need full URL for fetch, e.g.
+    // fetch('http://localhost:5000/api/projects/' + projectId + '/messages', { headers: {...} });
+
+  </script>
+</body>
+</html>
