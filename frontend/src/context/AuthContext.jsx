@@ -19,34 +19,22 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     if (token) {
-      fetchProfile();
-      socketService.connect(token);
-    } else {
-      setLoading(false);
+      const storedUser = localStorage.getItem('user');
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
+        socketService.connect(token);
+      }
     }
+    setLoading(false);
   }, [token]);
 
-  const fetchProfile = async () => {
-    try {
-      const response = await authAPI.getProfile();
-      setUser(response.data);
-    } catch (error) {
-      console.error('Failed to fetch profile:', error);
-      logout();
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const login = async (credentials) => {
-    console.log('Attempting login with:', credentials);
     try {
       const response = await authAPI.login(credentials);
-      console.log('Login response:', response.data);
-      
       const { token: newToken, ...userData } = response.data;
       
       localStorage.setItem('token', newToken);
+      localStorage.setItem('user', JSON.stringify(userData));
       setToken(newToken);
       setUser(userData);
       
@@ -54,7 +42,6 @@ export const AuthProvider = ({ children }) => {
       
       return { success: true };
     } catch (error) {
-      console.error('Login error:', error);
       return { 
         success: false, 
         error: error.response?.data?.message || 'Login failed' 
@@ -68,6 +55,7 @@ export const AuthProvider = ({ children }) => {
       const { token: newToken, ...user } = response.data;
       
       localStorage.setItem('token', newToken);
+      localStorage.setItem('user', JSON.stringify(user));
       setToken(newToken);
       setUser(user);
       
@@ -84,6 +72,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('user');
     setToken(null);
     setUser(null);
     socketService.disconnect();
