@@ -1,15 +1,17 @@
-// models/Project.js
 import mongoose from 'mongoose';
 
 const projectSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   description: { type: String, default: '' },
-  team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', required: true },
+  // Primary team (optional)
+  team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', default: null },
+  // Multiple assigned teams (optional)
+  teams: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Team' }],
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   repo: {
     provider: { type: String, enum: ['github','gitlab','bitbucket','none'], default: 'none' },
-    repoOwner: { type: String },       // e.g., github username/org
-    repoName: { type: String },        // e.g., repo slug
+    repoOwner: { type: String },
+    repoName: { type: String },
     repoUrl: { type: String },
     lastSyncedAt: { type: Date }
   },

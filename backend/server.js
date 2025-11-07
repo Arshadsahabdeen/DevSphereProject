@@ -13,6 +13,7 @@ import notificationRoutes from './routes/notificationRoutes.js';
 import Message from './models/Message.js';
 import jwt from 'jsonwebtoken';
 import User from './models/User.js';
+import debugRoutes from './routes/debugRoutes.js';
 
 dotenv.config();
 const app = express();
@@ -37,6 +38,8 @@ app.use('/api/teams', teamRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api', messageRoutes);
 app.use('/api', notificationRoutes);
+app.use('/api/debug', debugRoutes);
+
 
 const server = http.createServer(app);
 const io = new Server(server, {

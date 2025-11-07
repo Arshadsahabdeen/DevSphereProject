@@ -1,12 +1,39 @@
-// routes/teamRoutes.js
 import express from 'express';
-import { createTeam, getMyTeams, addMember } from '../controllers/teamController.js';
+import {
+  createTeam,
+  getMyTeams,
+  getTeamById,
+  updateTeam,
+  deleteTeam,
+  addMember,
+  removeMember
+} from '../controllers/teamController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-router.post('/', protect, createTeam);         // create a team
-router.get('/me', protect, getMyTeams);       // teams user belongs to
-router.post('/:teamId/members', protect, addMember); // add member by email
+// create a team
+router.post('/', protect, createTeam);
+
+// teams user belongs to
+router.get('/my', protect, getMyTeams);
+
+// single team (visible only to members)
+router.get('/:teamId', protect, getTeamById);
+
+// update team (owner/admin)
+router.put('/:teamId', protect, updateTeam);
+
+// delete team (owner only)
+router.delete('/:teamId', protect, deleteTeam);
+
+// add member by email (owner/admin)
+router.post('/:teamId/members', protect, addMember);
+
+// remove member - option 1: by URL param
+router.delete('/:teamId/members/:memberId', protect, removeMember);
+
+// remove member - option 2: by body { memberId } (same handler)
+router.delete('/:teamId/members', protect, removeMember);
 
 export default router;

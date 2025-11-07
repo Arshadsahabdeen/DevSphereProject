@@ -39,7 +39,7 @@ export const authAPI = {
 // Teams API
 export const teamsAPI = {
   create: (data) => api.post('/api/teams', data),
-  getAll: () => api.get('/api/teams'),
+  getAll: () => api.get('/api/teams/me'),
   getById: (id) => api.get(`/api/teams/${id}`),
   update: (id, data) => api.put(`/api/teams/${id}`, data),
   delete: (id) => api.delete(`/api/teams/${id}`),
@@ -49,8 +49,8 @@ export const teamsAPI = {
 
 // Projects API
 export const projectsAPI = {
-  create: (data) => api.post('/api/projects', data),
-  getAll: () => api.get('/api/projects'),
+  create: (data) => api.post(`/api/projects/team/${id}`, data),
+  getAll: () => api.get(`/api/projects/team/${id}`),
   getById: (id) => api.get(`/api/projects/${id}`),
   update: (id, data) => api.put(`/api/projects/${id}`, data),
   delete: (id) => api.delete(`/api/projects/${id}`),
