@@ -1,3 +1,4 @@
+// src/services/socket.js
 import { io } from 'socket.io-client';
 
 class SocketService {
@@ -6,19 +7,28 @@ class SocketService {
     this.isConnected = false;
   }
 
+  // connect will create a socket if not present and authenticate using the provided token
   connect(token) {
-    if (this.socket) return this.socket;
+    if (this.socket) {
+      // try to re-authenticate if token changed
+      if (token) this.authenticate(token);
+      return this.socket;
+    }
 
-    this.socket = io('http://localhost:5000', {
+    // Use environment URL if present, else default to localhost
+    const url = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+
+    this.socket = io(url, {
       autoConnect: false,
     });
 
     this.socket.connect();
 
     this.socket.on('connect', () => {
-      console.log('Socket connected');
+      console.log('Socket connected', this.socket.id);
       this.isConnected = true;
-      this.authenticate(token);
+      // authenticate if token provided
+      if (token) this.authenticate(token);
     });
 
     this.socket.on('disconnect', () => {
@@ -26,12 +36,21 @@ class SocketService {
       this.isConnected = false;
     });
 
+    // generic error logging
+    this.socket.on('error', (err) => {
+      console.warn('Socket error', err);
+    });
+
     return this.socket;
   }
 
   authenticate(token) {
     if (this.socket && token) {
-      this.socket.emit('authenticate', { token });
+      try {
+        this.socket.emit('authenticate', { token });
+      } catch (e) {
+        console.warn('authenticate emit failed', e);
+      }
     }
   }
 
@@ -49,26 +68,34 @@ class SocketService {
 
   sendMessage(projectId, content) {
     if (this.socket) {
+      // keep same shape the server expects
       this.socket.emit('sendMessage', { projectId, content });
     }
   }
 
-  onMessage(callback) {
+  // generic on/off
+  on(event, callback) {
+    if (this.socket) this.socket.on(event, callback);
+  }
+
+  off(event, callback) {
     if (this.socket) {
-      this.socket.on('message', callback);
+      if (callback) this.socket.off(event, callback);
+      else this.socket.removeAllListeners(event);
     }
+  }
+
+  // existing named handlers kept for backwards-compatibility
+  onMessage(callback) {
+    if (this.socket) this.socket.on('message', callback);
   }
 
   onNotification(callback) {
-    if (this.socket) {
-      this.socket.on('notification', callback);
-    }
+    if (this.socket) this.socket.on('notification', callback);
   }
 
   onTyping(callback) {
-    if (this.socket) {
-      this.socket.on('typing', callback);
-    }
+    if (this.socket) this.socket.on('typing', callback);
   }
 
   emitTyping(projectId, isTyping) {
@@ -77,9 +104,25 @@ class SocketService {
     }
   }
 
+  // new convenience handlers for the projectAssigned event
+  onProjectAssigned(callback) {
+    if (this.socket) this.socket.on('projectAssigned', callback);
+  }
+
+  offProjectAssigned(callback) {
+    if (this.socket) {
+      if (callback) this.socket.off('projectAssigned', callback);
+      else this.socket.removeAllListeners('projectAssigned');
+    }
+  }
+
   disconnect() {
     if (this.socket) {
-      this.socket.disconnect();
+      try {
+        this.socket.disconnect();
+      } catch (e) {
+        // ignore
+      }
       this.socket = null;
       this.isConnected = false;
     }

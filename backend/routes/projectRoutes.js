@@ -1,3 +1,4 @@
+// backend/routes/projectRoutes.js
 import express from 'express';
 import {
   createProject,
@@ -14,34 +15,55 @@ import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// create project (optionally under a team)
-// POST /api/projects         -> create without team
-// POST /api/projects/team/:teamId -> create under team (membership enforced)
+/**
+ * Create project
+ * - POST /api/projects                -> create without team (owner = req.user)
+ * - POST /api/projects/team/:teamId  -> create under a team (membership enforced)
+ */
 router.post('/', protect, createProject);
 router.post('/team/:teamId', protect, createProject);
 
-// Get projects owned by the authenticated user only
-// GET /api/projects/mine
+/**
+ * Get projects visible to the authenticated user
+ * - Returns projects the user owns OR projects assigned to any team the user is a member of.
+ * - GET /api/projects/mine
+ */
 router.get('/mine', protect, getMyProjects);
 
-// Get projects under a specific team (requires membership)
-// GET /api/projects/team/:teamId
+/**
+ * Get projects for a specific team (requires membership)
+ * - GET /api/projects/team/:teamId
+ */
 router.get('/team/:teamId', protect, getProjectsByTeam);
 
-// Get single project (must be after team routes to avoid param collision)
+/**
+ * Get a single project (visibility enforced in controller)
+ * Note: keep this after /team routes to avoid param collisions.
+ * - GET /api/projects/:projectId
+ */
 router.get('/:projectId', protect, getProjectById);
 
-// Update project (owner only)
+/**
+ * Update / Delete project (owner-only enforced in controller)
+ */
 router.put('/:projectId', protect, updateProject);
-
-// Delete project (owner only)
 router.delete('/:projectId', protect, deleteProject);
 
-// Assign / remove team to/from project
+/**
+ * Assign / Remove a team to/from a project
+ * - POST /api/projects/:projectId/assign-team   -> body: { teamId }
+ * - POST /api/projects/:projectId/remove-team   -> body: { teamId }
+ *
+ * These endpoints enforce that the caller is either the project owner or a team owner/admin.
+ * (Using POST here keeps backward compatibility with your existing controllers.)
+ */
 router.post('/:projectId/assign-team', protect, assignTeamToProject);
 router.post('/:projectId/remove-team', protect, removeTeamFromProject);
 
-// Link repo to project
+/**
+ * Link a repository to a project (owner or team admin/owner)
+ * - POST /api/projects/:projectId/link
+ */
 router.post('/:projectId/link', protect, linkRepo);
 
 export default router;

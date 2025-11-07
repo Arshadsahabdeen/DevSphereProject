@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
 import Teams from './pages/Teams';
 import Chat from './pages/Chat';
+import Notification from './pages/Notification';
 import TestConnection from './pages/TestConnection';
 
 function App() {
@@ -30,7 +31,7 @@ function App() {
               <Route path="projects" element={<Projects />} />
               <Route path="chat" element={<Chat />} />
               <Route path="teams" element={<Teams />} />
-              <Route path="notifications" element={<div className="bg-white rounded-lg shadow-lg p-6"><h1 className="text-2xl font-bold">Notifications - Coming Soon</h1></div>} />
+              <Route path="notifications" element={<Notification />} />              
               <Route path="profile" element={<div className="bg-white rounded-lg shadow-lg p-6"><h1 className="text-2xl font-bold">Profile - Coming Soon</h1></div>} />
             </Route>
           </Routes>

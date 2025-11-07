@@ -9,7 +9,6 @@ const Sidebar = () => {
     { name: 'Projects', path: '/projects', icon: '📋' },
     { name: 'Teams', path: '/teams', icon: '👥' },
     { name: 'Chat', path: '/chat', icon: '💬' },
-    { name: 'Notifications', path: '/notifications', icon: '🔔' },
   ];
 
   return (

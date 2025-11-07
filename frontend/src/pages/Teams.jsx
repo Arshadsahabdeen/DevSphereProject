@@ -1,7 +1,9 @@
+// src/pages/Teams.jsx
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { teamsAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import socketService from '../services/socket';
 
 const Teams = () => {
   const { user } = useAuth();
@@ -22,6 +24,25 @@ const Teams = () => {
   useEffect(() => {
     if (!user) return;
     fetchTeams();
+
+    // init socket connection + listen for projectAssigned (so team members get notifications here too)
+    const token = localStorage.getItem('token');
+    socketService.connect(token);
+
+    const onAssigned = (payload) => {
+      try {
+        const projectName = payload?.project?.name || '';
+        toast.success(payload?.message || `Assigned: ${projectName}`);
+      } catch (e) {
+        toast.success('You have been assigned to a new project');
+      }
+      // optional: you could also trigger a projects refresh (emit a custom event / use global state)
+    };
+    socketService.onProjectAssigned(onAssigned);
+
+    return () => {
+      socketService.offProjectAssigned(onAssigned);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 

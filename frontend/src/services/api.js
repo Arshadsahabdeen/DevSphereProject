@@ -74,6 +74,8 @@ export const projectsAPI = {
   update: (id, data) => api.put(`/api/projects/${id}`, data),
   delete: (id) => api.delete(`/api/projects/${id}`),
   assignTeam: (projectId, teamId) => api.post(`/api/projects/${projectId}/assign-team`, { teamId }),
+  // alias for some codebases that reference this name
+  assignTeamToProject: (projectId, teamId) => api.post(`/api/projects/${projectId}/assign-team`, { teamId }),
   removeTeam: (projectId, teamId) => api.post(`/api/projects/${projectId}/remove-team`, { teamId }),
   linkRepo: (projectId, payload) => api.post(`/api/projects/${projectId}/link`, payload),
 };
@@ -86,6 +88,10 @@ export const messagesAPI = {
 export const notificationsAPI = {
   getAll: () => api.get('/api/notifications'),
   markAsRead: (id) => api.patch(`/api/notifications/${id}/read`),
+  // optional: create a single notification (useful if you want to persist assignment notifications)
+  createNotification: (payload) => api.post('/api/notifications', payload), // { userId, title, body, meta }
+  // optional: create bulk notifications for multiple users
+  createBulkNotifications: (payload) => api.post('/api/notifications/bulk', payload), // { users: [], title, body, meta }
 };
 
 export default api;

@@ -1,6 +1,8 @@
+// backend/controllers/projectController.js
 import mongoose from 'mongoose';
 import Project from '../models/Project.js';
 import Team from '../models/Team.js';
+import socketManager from '../utils/socketManager.js';
 
 // Create a project (team optional)
 // If teamId param provided, create and attach to that team (membership check)
@@ -41,7 +43,7 @@ export const createProject = async (req, res) => {
   }
 };
 
-// Get projects owned by the authenticated user ONLY
+// Get projects owned by the authenticated user OR assigned to teams the user belongs to
 // Route: GET /api/projects/mine
 export const getMyProjects = async (req, res) => {
   try {
@@ -49,7 +51,19 @@ export const getMyProjects = async (req, res) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const projects = await Project.find({ owner: req.user._id })
+    const userId = req.user._id;
+
+    // find team ids where this user is a member
+    // teams.members is expected to be an array of objects like { user: ObjectId, role: '...' }
+    const teamIds = await Team.find({ 'members.user': userId }).distinct('_id');
+
+    // find projects where owner is user OR teams include any of these teamIds
+    const projects = await Project.find({
+      $or: [
+        { owner: userId },
+        { teams: { $in: teamIds } }
+      ]
+    })
       .populate('owner', 'name email')
       .populate('teams', 'name')
       .lean();
@@ -82,7 +96,7 @@ export const getProjectsByTeam = async (req, res) => {
 
     res.json(projects);
   } catch (err) {
-    console.error('getProjectsByTeam error:', err);
+    console.error('getProjectsByTeam error', err);
     res.status(500).json({ message: 'Server error' });
   }
 };
@@ -204,6 +218,23 @@ export const assignTeamToProject = async (req, res) => {
 
     await project.save();
     const populated = await Project.findById(project._id).populate('owner', 'name email').populate('teams', 'name');
+
+    // --- NEW: notify team members via socketManager ---
+    try {
+      // team.members expected shape: [{ user: ObjectId, role: 'member'|'owner'|'admin' }, ...]
+      const teamMemberUserIds = team.members.map(m => String(m.user)).filter(Boolean);
+      if (teamMemberUserIds.length > 0) {
+        const payload = {
+          project: populated,
+          message: 'You have been assigned to a new project'
+        };
+        socketManager.emitToUsers(teamMemberUserIds, 'projectAssigned', payload);
+      }
+    } catch (emitErr) {
+      console.error('Error emitting projectAssigned event:', emitErr);
+      // don't fail the request because of notification issues
+    }
+
     res.json({ message: 'Team assigned to project', project: populated });
   } catch (err) {
     console.error('assignTeamToProject error:', err);

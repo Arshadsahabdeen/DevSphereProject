@@ -1,3 +1,4 @@
+// backend/server.js
 import 'dotenv/config';
 import express from 'express';
 import http from 'http';
@@ -14,6 +15,7 @@ import Message from './models/Message.js';
 import jwt from 'jsonwebtoken';
 import User from './models/User.js';
 import debugRoutes from './routes/debugRoutes.js';
+import socketManager from './utils/socketManager.js';
 
 dotenv.config();
 const app = express();
@@ -24,9 +26,6 @@ const PORT = process.env.PORT || 5000;
 
 // Connect to MongoDB
 connectDB();
-
-// Middleware
-app.use(express.json());
 
 // Routes
 app.get('/', (req, res) => {
@@ -40,7 +39,6 @@ app.use('/api', messageRoutes);
 app.use('/api', notificationRoutes);
 app.use('/api/debug', debugRoutes);
 
-
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -48,6 +46,9 @@ const io = new Server(server, {
     methods: ['GET','POST']
   }
 });
+
+// give controllers access to io via socketManager
+socketManager.setIO(io);
 
 // Helper: authenticate socket by sending token in handshake auth: { token }
 const getUserFromToken = async (token) => {
@@ -63,15 +64,18 @@ const getUserFromToken = async (token) => {
 io.on('connection', (socket) => {
   console.log('Socket connected:', socket.id);
 
-  // authenticate on connect (optional but recommended)
+  // authenticate on connect (client should emit 'authenticate' with { token })
   socket.on('authenticate', async ({ token }) => {
     const user = await getUserFromToken(token);
     if (!user) {
       socket.emit('unauthorized');
-      socket.disconnect();
+      // don't disconnect forcibly — let client handle; but disconnect to be strict
+      try { socket.disconnect(); } catch (e) {}
       return;
     }
     socket.user = user;
+    // join user-specific room so server can emit to this user easily
+    socket.join(`user-${String(user._id)}`);
     socket.emit('authenticated', { id: user._id, name: user.name });
   });
 
@@ -100,7 +104,6 @@ io.on('connection', (socket) => {
   socket.on('sendMessage', async ({ projectId, content, meta = {} }) => {
     if (!projectId || !content) return;
     try {
-      // Optional: you can ensure socket.user exists (authenticated)
       const userId = socket.user?._id;
       const message = await Message.create({
         project: projectId,
@@ -108,9 +111,7 @@ io.on('connection', (socket) => {
         content,
         meta
       });
-      // populate sender name/email for convenience
       const populated = await Message.findById(message._id).populate('sender', 'name email').lean();
-      // emit message to everyone in room
       io.to(projectId).emit('message', populated);
     } catch (err) {
       console.error('sendMessage error:', err);
@@ -118,75 +119,65 @@ io.on('connection', (socket) => {
     }
   });
 
-  // inside io.on('connection', (socket) => { ... })
-
-// Client will emit when it successfully received a message
-socket.on('delivered', async ({ projectId, messageId }) => {
-  try {
-    if (!messageId) return;
-    const msg = await Message.findById(messageId);
-    if (!msg) return;
-    // add to deliveredTo if not present
-    const uid = socket.user?._id;
-    if (uid && !msg.deliveredTo.some(id => id.toString() === uid.toString())) {
-      msg.deliveredTo.push(uid);
-      await msg.save();
-      // broadcast delivery update to room
-      io.to(projectId).emit('deliveredUpdate', { messageId, userId: uid });
-    }
-  } catch (err) {
-    console.error('delivered handler error:', err);
-  }
-});
-
-// Client will emit when user reads a message (or reads up to timestamp)
-socket.on('read', async ({ projectId, messageId, upTo }) => {
-  try {
-    const uid = socket.user?._id;
-    if (!uid) return;
-
-    if (messageId) {
+  // delivered/read/delete handlers (unchanged aside from safety checks)
+  socket.on('delivered', async ({ projectId, messageId }) => {
+    try {
+      if (!messageId) return;
       const msg = await Message.findById(messageId);
       if (!msg) return;
-      if (!msg.readBy.some(id => id.toString() === uid.toString())) {
-        msg.readBy.push(uid);
+      const uid = socket.user?._id;
+      if (uid && !msg.deliveredTo.some(id => id.toString() === uid.toString())) {
+        msg.deliveredTo.push(uid);
         await msg.save();
-        io.to(projectId).emit('readUpdate', { messageId, userId: uid });
+        io.to(projectId).emit('deliveredUpdate', { messageId, userId: uid });
       }
-    } else if (upTo) {
-      // mark all messages in project createdAt <= upTo as read by this user
-      await Message.updateMany(
-        { project: projectId, createdAt: { $lte: new Date(upTo) }, readBy: { $ne: uid } },
-        { $push: { readBy: uid } }
-      );
-      io.to(projectId).emit('readBulk', { projectId, userId: uid, upTo });
+    } catch (err) {
+      console.error('delivered handler error:', err);
     }
-  } catch (err) {
-    console.error('read handler error:', err);
-  }
-});
+  });
 
-// soft-delete a message (optional: check sender / permissions)
-socket.on('deleteMessage', async ({ projectId, messageId }) => {
-  try {
-    const uid = socket.user?._id;
-    const msg = await Message.findById(messageId);
-    if (!msg) return;
+  socket.on('read', async ({ projectId, messageId, upTo }) => {
+    try {
+      const uid = socket.user?._id;
+      if (!uid) return;
 
-    // allow delete if sender or project owner/admin (simple)
-    if (msg.sender.toString() !== uid.toString()) {
-      // optionally check team/project ownership/roles here
-      return socket.emit('error', { message: 'Not authorized to delete' });
+      if (messageId) {
+        const msg = await Message.findById(messageId);
+        if (!msg) return;
+        if (!msg.readBy.some(id => id.toString() === uid.toString())) {
+          msg.readBy.push(uid);
+          await msg.save();
+          io.to(projectId).emit('readUpdate', { messageId, userId: uid });
+        }
+      } else if (upTo) {
+        await Message.updateMany(
+          { project: projectId, createdAt: { $lte: new Date(upTo) }, readBy: { $ne: uid } },
+          { $push: { readBy: uid } }
+        );
+        io.to(projectId).emit('readBulk', { projectId, userId: uid, upTo });
+      }
+    } catch (err) {
+      console.error('read handler error:', err);
     }
-    msg.deleted = true;
-    msg.content = ''; // or keep content but mark deleted
-    await msg.save();
-    io.to(projectId).emit('messageDeleted', { messageId });
-  } catch (err) {
-    console.error('deleteMessage handler error:', err);
-  }
-});
+  });
 
+  socket.on('deleteMessage', async ({ projectId, messageId }) => {
+    try {
+      const uid = socket.user?._id;
+      const msg = await Message.findById(messageId);
+      if (!msg) return;
+
+      if (msg.sender.toString() !== uid.toString()) {
+        return socket.emit('error', { message: 'Not authorized to delete' });
+      }
+      msg.deleted = true;
+      msg.content = '';
+      await msg.save();
+      io.to(projectId).emit('messageDeleted', { messageId });
+    } catch (err) {
+      console.error('deleteMessage handler error:', err);
+    }
+  });
 
   socket.on('disconnect', () => {
     console.log('Socket disconnected:', socket.id);

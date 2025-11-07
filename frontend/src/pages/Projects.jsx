@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { projectsAPI, teamsAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import socketService from '../services/socket';
 
 const Projects = () => {
   const [projects, setProjects] = useState([]);
@@ -24,6 +25,29 @@ const Projects = () => {
   useEffect(() => {
     fetchProjects();
     fetchMyTeams();
+
+    // init socket connection and listener for projectAssigned
+    const token = localStorage.getItem('token');
+    const sock = socketService.connect(token);
+
+    const onAssigned = (payload) => {
+      try {
+        const projectName = payload?.project?.name || '';
+        toast.success(payload?.message || `Assigned: ${projectName}`);
+      } catch (e) {
+        toast.success('You have been assigned to a new project');
+      }
+      // refresh to get canonical project data
+      fetchProjects();
+    };
+
+    socketService.onProjectAssigned(onAssigned);
+
+    return () => {
+      // cleanup listener when component unmounts
+      socketService.offProjectAssigned(onAssigned);
+      // do not disconnect socket globally — other pages might need it
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
