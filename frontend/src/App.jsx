@@ -7,6 +7,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
+import Teams from './pages/Teams';
 import Chat from './pages/Chat';
 import TestConnection from './pages/TestConnection';
 
@@ -28,7 +29,7 @@ function App() {
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="projects" element={<Projects />} />
               <Route path="chat" element={<Chat />} />
-              <Route path="teams" element={<div className="bg-white rounded-lg shadow-lg p-6"><h1 className="text-2xl font-bold">Teams - Coming Soon</h1></div>} />
+              <Route path="teams" element={<Teams />} />
               <Route path="notifications" element={<div className="bg-white rounded-lg shadow-lg p-6"><h1 className="text-2xl font-bold">Notifications - Coming Soon</h1></div>} />
               <Route path="profile" element={<div className="bg-white rounded-lg shadow-lg p-6"><h1 className="text-2xl font-bold">Profile - Coming Soon</h1></div>} />
             </Route>
