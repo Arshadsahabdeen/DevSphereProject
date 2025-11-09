@@ -49,6 +49,15 @@ export const teamsAPI = {
   removeMember: (id, memberId) => api.delete(`/api/teams/${id}/members/${memberId}`),
 };
 
+export const organizationsAPI = {
+  create: (data) => api.post('/api/organizations', data),
+  getMyOrganizations: () => api.get('/api/organizations/my'),
+  assignTeam: (orgId, data) => api.post(`/api/organizations/${orgId}/assign-team`, data),
+  removeTeam: (orgId, teamId) => api.delete(`/api/organizations/${orgId}/team/${teamId}`),
+  delete: (orgId) => api.delete(`/api/organizations/${orgId}`),
+};
+
+
 /* ---------- Projects API ---------- */
 // Conventions:
 // - Create: pass { name, description, teamId? }  -> will POST to proper endpoint

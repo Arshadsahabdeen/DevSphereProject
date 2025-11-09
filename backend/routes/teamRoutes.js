@@ -9,6 +9,7 @@ import {
   removeMember
 } from '../controllers/teamController.js';
 import { protect } from '../middleware/authMiddleware.js';
+import {checkRole} from '../middleware/roleMiddleware.js';
 
 const router = express.Router();
 
@@ -22,18 +23,18 @@ router.get('/my', protect, getMyTeams);
 router.get('/:teamId', protect, getTeamById);
 
 // update team (owner/admin)
-router.put('/:teamId', protect, updateTeam);
+router.put('/:teamId', protect,checkRole(['owner','admin']), updateTeam);
 
 // delete team (owner only)
-router.delete('/:teamId', protect, deleteTeam);
+router.delete('/:teamId', protect,checkRole(['owner']), deleteTeam);
 
 // add member by email (owner/admin)
-router.post('/:teamId/members', protect, addMember);
+router.post('/:teamId/members', protect, checkRole(['owner','admin']),addMember);
 
 // remove member - option 1: by URL param
-router.delete('/:teamId/members/:memberId', protect, removeMember);
+router.delete('/:teamId/members/:memberId', checkRole(['owner','admin']), protect, removeMember);
 
 // remove member - option 2: by body { memberId } (same handler)
-router.delete('/:teamId/members', protect, removeMember);
+router.delete('/:teamId/members', protect, checkRole(['owner','admin']),removeMember);
 
 export default router;

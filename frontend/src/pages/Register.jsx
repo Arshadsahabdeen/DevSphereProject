@@ -2,38 +2,69 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import { organizationsAPI } from '../services/api'; // 👈 new import
 
 const Register = () => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
+    createOrg: false,
+    orgName: '',
+    orgDescription: '',
   });
+
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
 
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
+    const { name, type, checked, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value,
+    }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
-    const result = await register(formData);
-    
-    if (result.success) {
-      toast.success('Registration successful!');
-      navigate('/dashboard');
-    } else {
-      toast.error(result.error);
+    try {
+      // 1️⃣ Register the user first
+      const result = await register({
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+      });
+
+      if (result.success) {
+        toast.success('Registration successful!');
+
+        // 2️⃣ If "Create Organization" is checked
+        if (formData.createOrg && formData.orgName.trim()) {
+          try {
+            await organizationsAPI.create({
+              name: formData.orgName.trim(),
+              description: formData.orgDescription,
+            });
+            toast.success('Organization created successfully!');
+          } catch (err) {
+            console.error('create org error', err);
+            toast.error(err.response?.data?.message || 'Failed to create organization');
+          }
+        }
+
+        navigate('/dashboard');
+      } else {
+        toast.error(result.error);
+      }
+    } catch (err) {
+      console.error('Registration failed:', err);
+      toast.error('Something went wrong');
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   };
 
   return (
@@ -45,6 +76,7 @@ const Register = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Name */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
               Name
@@ -60,6 +92,7 @@ const Register = () => {
             />
           </div>
 
+          {/* Email */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
               Email
@@ -75,6 +108,7 @@ const Register = () => {
             />
           </div>
 
+          {/* Password */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
               Password
@@ -89,6 +123,54 @@ const Register = () => {
               placeholder="Enter your password"
             />
           </div>
+
+          {/* Create Organization Toggle */}
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              name="createOrg"
+              checked={formData.createOrg}
+              onChange={handleChange}
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-600 rounded"
+            />
+            <label className="text-sm text-gray-300">
+              Create a new organization
+            </label>
+          </div>
+
+          {/* Organization Fields (conditional) */}
+          {formData.createOrg && (
+            <div className="bg-gray-700 p-4 rounded-lg space-y-3 border border-gray-600">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">
+                  Organization Name
+                </label>
+                <input
+                  type="text"
+                  name="orgName"
+                  value={formData.orgName}
+                  onChange={handleChange}
+                  required
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  placeholder="Enter organization name"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">
+                  Description
+                </label>
+                <textarea
+                  name="orgDescription"
+                  value={formData.orgDescription}
+                  onChange={handleChange}
+                  rows="3"
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  placeholder="Brief description (optional)"
+                ></textarea>
+              </div>
+            </div>
+          )}
 
           <button
             type="submit"

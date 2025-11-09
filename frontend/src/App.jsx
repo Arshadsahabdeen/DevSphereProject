@@ -11,6 +11,8 @@ import Teams from './pages/Teams';
 import Chat from './pages/Chat';
 import Notification from './pages/Notification';
 import TestConnection from './pages/TestConnection';
+import Organizations from './pages/Organizations.jsx';
+import CreateOrganization from './pages/CreateOrganization.jsx';
 
 function App() {
   return (
@@ -31,7 +33,9 @@ function App() {
               <Route path="projects" element={<Projects />} />
               <Route path="chat" element={<Chat />} />
               <Route path="teams" element={<Teams />} />
-              <Route path="notifications" element={<Notification />} />              
+              <Route path="notifications" element={<Notification />} />    
+              <Route path="organizations" element={<Organizations />} />          
+              <Route path="/create-organization" element={<CreateOrganization />}/>
               <Route path="profile" element={<div className="bg-white rounded-lg shadow-lg p-6"><h1 className="text-2xl font-bold">Profile - Coming Soon</h1></div>} />
             </Route>
           </Routes>

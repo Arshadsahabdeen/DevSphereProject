@@ -1,8 +1,8 @@
-import Team from '../models/Team.js';
-import User from '../models/User.js';
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
+import Team from "../models/Team.js";
+import User from "../models/User.js";
 
-// Create a new team
+
 export const createTeam = async (req, res) => {
   try {
     const { name, description } = req.body;
@@ -30,7 +30,7 @@ export const getMyTeams = async (req, res) => {
       .populate('owner', 'name email')
       .populate('members.user', 'name email')
       .lean();
-    res.json(teams);
+    res.status(200).json(teams);
   } catch (err) {
     console.error('getMyTeams error:', err);
     res.status(500).json({ message: 'Server error' });
@@ -49,7 +49,7 @@ export const getTeamById = async (req, res) => {
     const isMember = team.members.some(m => m.user._id.toString() === req.user._id.toString());
     if (!isMember) return res.status(403).json({ message: 'Not authorized to view this team' });
 
-    res.json(team);
+    res.status(200).json(team);
   } catch (err) {
     console.error('getTeamById error:', err);
     res.status(500).json({ message: 'Server error' });
@@ -76,7 +76,7 @@ export const updateTeam = async (req, res) => {
 
     await team.save();
     const populated = await Team.findById(team._id).populate('owner', 'name email').populate('members.user', 'name email');
-    res.json(populated);
+    res.status(200).json(populated);
   } catch (err) {
     console.error('updateTeam error:', err);
     res.status(500).json({ message: 'Server error' });
@@ -97,7 +97,7 @@ export const deleteTeam = async (req, res) => {
     }
 
     await team.remove();
-    res.json({ message: 'Team deleted' });
+    res.status(200).json({ message: 'Team deleted' });
   } catch (err) {
     console.error('deleteTeam error:', err);
     res.status(500).json({ message: 'Server error' });
@@ -132,7 +132,7 @@ export const addMember = async (req, res) => {
     await team.save();
 
     const populated = await Team.findById(team._id).populate('owner', 'name email').populate('members.user', 'name email');
-    res.json({ message: 'Member added', team: populated });
+    res.status(200).json({ message: 'Member added', team: populated });
   } catch (err) {
     console.error('addMember error:', err);
     res.status(500).json({ message: 'Server error' });
@@ -167,9 +167,10 @@ export const removeMember = async (req, res) => {
     await team.save();
 
     const populated = await Team.findById(team._id).populate('owner', 'name email').populate('members.user', 'name email');
-    res.json({ message: 'Member removed', team: populated });
+    res.status(200).json({ message: 'Member removed', team: populated });
   } catch (err) {
     console.error('removeMember error:', err);
     res.status(500).json({ message: 'Server error' });
   }
 };
+

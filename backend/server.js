@@ -16,6 +16,7 @@ import jwt from 'jsonwebtoken';
 import User from './models/User.js';
 import debugRoutes from './routes/debugRoutes.js';
 import socketManager from './utils/socketManager.js';
+import orgRoutes from "./routes/orgRoutes.js";
 
 dotenv.config();
 const app = express();
@@ -38,6 +39,7 @@ app.use('/api/projects', projectRoutes);
 app.use('/api', messageRoutes);
 app.use('/api', notificationRoutes);
 app.use('/api/debug', debugRoutes);
+app.use("/api/organizations", orgRoutes);
 
 const server = http.createServer(app);
 const io = new Server(server, {

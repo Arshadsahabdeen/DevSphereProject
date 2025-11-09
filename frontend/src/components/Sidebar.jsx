@@ -8,6 +8,7 @@ const Sidebar = () => {
     { name: 'Dashboard', path: '/dashboard', icon: '🏠' },
     { name: 'Projects', path: '/projects', icon: '📋' },
     { name: 'Teams', path: '/teams', icon: '👥' },
+    { name: 'Organizations', path: '/organizations', icon: '🏢' }, // 👈 new one
     { name: 'Chat', path: '/chat', icon: '💬' },
   ];
 
@@ -36,8 +37,6 @@ const Sidebar = () => {
           </NavLink>
         ))}
       </nav>
-
-
     </div>
   );
 };
