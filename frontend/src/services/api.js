@@ -1,3 +1,4 @@
+// src/services/api.js
 import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -38,25 +39,19 @@ export const authAPI = {
 };
 
 /* ---------- Teams API ---------- */
-// Note: backend route for listing teams the user belongs to is /api/teams/my
 export const teamsAPI = {
   create: (data) => api.post('/api/teams', data),
   getMyTeams: () => api.get('/api/teams/my'),
   getById: (id) => api.get(`/api/teams/${id}`),
   update: (id, data) => api.put(`/api/teams/${id}`, data),
   delete: (id) => api.delete(`/api/teams/${id}`),
-  addMemberByEmail: (id, payload) => api.post(`/api/teams/${id}/members`, payload), // { email, role }
+  addMemberByEmail: (id, payload) => api.post(`/api/teams/${id}/members`, payload),
   removeMember: (id, memberId) => api.delete(`/api/teams/${id}/members/${memberId}`),
 };
 
 /* ---------- Projects API ---------- */
-// Conventions:
-// - Create: pass { name, description, teamId? }  -> will POST to proper endpoint
-// - Get mine: GET /api/projects/mine
-// - Get by team: GET /api/projects/team/:teamId
 export const projectsAPI = {
   create: (data) => {
-    // data: { name, description, teamId? }
     if (data && data.teamId) {
       return api.post(`/api/projects/team/${data.teamId}`, {
         name: data.name,
@@ -74,24 +69,44 @@ export const projectsAPI = {
   update: (id, data) => api.put(`/api/projects/${id}`, data),
   delete: (id) => api.delete(`/api/projects/${id}`),
   assignTeam: (projectId, teamId) => api.post(`/api/projects/${projectId}/assign-team`, { teamId }),
-  // alias for some codebases that reference this name
   assignTeamToProject: (projectId, teamId) => api.post(`/api/projects/${projectId}/assign-team`, { teamId }),
   removeTeam: (projectId, teamId) => api.post(`/api/projects/${projectId}/remove-team`, { teamId }),
   linkRepo: (projectId, payload) => api.post(`/api/projects/${projectId}/link`, payload),
 };
 
-/* ---------- Messages / Notifications ---------- */
+/* ---------- Messages ---------- */
 export const messagesAPI = {
-  getByProject: (projectId) => api.get(`/api/messages/${projectId}`),
+  getByProject: (projectId, options = {}) => {
+    if (!projectId) return Promise.reject(new Error('projectId is required'));
+
+    const params = {};
+    if (options.limit) params.limit = options.limit;
+    if (options.page) params.page = options.page;
+    if (options.includeDeleted) params.includeDeleted = options.includeDeleted;
+
+    const canonical = `/api/projects/${projectId}/messages`;
+    const legacy = `/api/messages/${projectId}`;
+
+    return api.get(canonical, { params }).catch((err) => {
+      const status = err?.response?.status;
+      if (!status || status === 404) {
+        return api.get(legacy, { params });
+      }
+      throw err;
+    });
+  },
 };
 
+/* ---------- Notifications ---------- */
 export const notificationsAPI = {
-  getAll: () => api.get('/api/notifications'),
+  getAll: (params = {}) => api.get('/api/notifications', { params }), // supports page, limit
   markAsRead: (id) => api.patch(`/api/notifications/${id}/read`),
-  // optional: create a single notification (useful if you want to persist assignment notifications)
-  createNotification: (payload) => api.post('/api/notifications', payload), // { userId, title, body, meta }
-  // optional: create bulk notifications for multiple users
-  createBulkNotifications: (payload) => api.post('/api/notifications/bulk', payload), // { users: [], title, body, meta }
+  markAllRead: () => api.patch('/api/notifications/read-all'),
+  getUnreadCount: () => api.get('/api/notifications/unread-count'),
+  createNotification: (payload) => api.post('/api/notifications', payload),
+  deleteNotification: (id) => api.delete(`/api/notifications/${id}`),
+  // Optional: bulk create (if your backend implements it)
+  createBulkNotifications: (payload) => api.post('/api/notifications/bulk', payload),
 };
 
 export default api;

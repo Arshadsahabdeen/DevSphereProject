@@ -11,6 +11,7 @@ import teamRoutes from './routes/teamRoutes.js';
 import projectRoutes from './routes/projectRoutes.js';
 import messageRoutes from './routes/messageRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import * as notificationCtrl from './controllers/notificationController.js';
 import Message from './models/Message.js';
 import jwt from 'jsonwebtoken';
 import User from './models/User.js';
@@ -46,6 +47,10 @@ const io = new Server(server, {
     methods: ['GET','POST']
   }
 });
+// Give notification controller access to io so it can emit events
+if (notificationCtrl && typeof notificationCtrl.setNotificationIO === 'function') {
+  notificationCtrl.setNotificationIO(io);
+}
 
 // give controllers access to io via socketManager
 socketManager.setIO(io);

@@ -1,11 +1,11 @@
-// controllers/notificationController.js
+// backend/controllers/notificationController.js
 import Notification from '../models/Notification.js';
 import User from '../models/User.js';
 import Project from '../models/Project.js';
 
 /**
  * Optional Socket.IO instance (set with setNotificationIO)
- * If set, controllers will emit 'notification' events to recipient rooms (room name = userId).
+ * If set, controllers will emit 'notification' events to recipient rooms (room name = user-${id}).
  */
 let io = null;
 export function setNotificationIO(ioInstance) {
@@ -14,13 +14,12 @@ export function setNotificationIO(ioInstance) {
 
 /**
  * Helper to emit notification to recipient over socket (if io available).
- * Emits to room equal to recipient's id: 'user:<recipientId>'
+ * Emits to room equal to recipient's id: 'user-<recipientId>'
  */
 function emitNotification(notif) {
   if (!io || !notif || !notif.recipient) return;
   try {
-    const room = `user:${String(notif.recipient)}`;
-    // send minimal payload
+    const room = `user-${String(notif.recipient)}`; // match server's join room
     io.to(room).emit('notification', {
       id: notif._id,
       recipient: notif.recipient,
@@ -35,6 +34,32 @@ function emitNotification(notif) {
     });
   } catch (e) {
     console.warn('emitNotification error', e);
+  }
+}
+
+/**
+ * Emit a notification update (e.g., marked read) to the user's room
+ */
+function emitNotificationUpdate(recipientId, payload) {
+  if (!io || !recipientId) return;
+  try {
+    const room = `user-${String(recipientId)}`;
+    io.to(room).emit('notificationUpdated', payload);
+  } catch (e) {
+    console.warn('emitNotificationUpdate error', e);
+  }
+}
+
+/**
+ * Emit that all notifications were marked read for the user
+ */
+function emitNotificationsMarkedAllRead(recipientId) {
+  if (!io || !recipientId) return;
+  try {
+    const room = `user-${String(recipientId)}`;
+    io.to(room).emit('notificationsMarkedRead', { userId: recipientId });
+  } catch (e) {
+    console.warn('emitNotificationsMarkedAllRead error', e);
   }
 }
 
@@ -81,7 +106,11 @@ export async function createNotification(req, res) {
 
     await n.save();
     // populate sender for response
-    await n.populate('sender', 'name email').execPopulate?.() || await n.populate('sender', 'name email').then(() => n);
+    try {
+      await n.populate('sender', 'name email');
+    } catch (e) {
+      // populate might already work depending on mongoose version; ignore if fails
+    }
 
     // Emit via socket if available
     emitNotification(n);
@@ -152,6 +181,8 @@ export async function markAsRead(req, res) {
     if (!n.read) {
       n.read = true;
       await n.save();
+      // emit update to the user's socket room
+      emitNotificationUpdate(n.recipient, { id: n._id, read: true });
     }
     return res.json({ message: 'Marked read' });
   } catch (err) {
@@ -167,6 +198,8 @@ export async function markAsRead(req, res) {
 export async function markAllRead(req, res) {
   try {
     await Notification.updateMany({ recipient: req.user._id, read: false }, { $set: { read: true } });
+    // emit a single event to user's room so clients can clear notifications
+    emitNotificationsMarkedAllRead(req.user._id);
     return res.json({ message: 'All marked read' });
   } catch (err) {
     console.error('markAllRead error:', err);
@@ -185,6 +218,8 @@ export async function deleteNotification(req, res) {
     if (!n) return res.status(404).json({ message: 'Not found' });
     if (String(n.recipient) !== String(req.user._id)) return res.status(403).json({ message: 'Not authorized' });
     await n.remove();
+    // emit update: notification deleted
+    emitNotificationUpdate(n.recipient, { id: n._id, deleted: true });
     return res.json({ message: 'Deleted' });
   } catch (err) {
     console.error('deleteNotification error:', err);

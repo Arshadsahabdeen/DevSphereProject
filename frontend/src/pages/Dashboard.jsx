@@ -1,3 +1,4 @@
+// src/pages/Dashboard.jsx
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { projectsAPI, teamsAPI, messagesAPI, notificationsAPI } from '../services/api';
@@ -20,70 +21,90 @@ const Dashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  // normalize messages response
+  const normalizeMessagesResponse = (res) => {
+    if (!res) return { messages: [], meta: {} };
+    const data = res.data ?? res;
+
+    if (data && typeof data === 'object' && Array.isArray(data.messages)) {
+      return { messages: data.messages, meta: data.meta || {} };
+    }
+    if (Array.isArray(data)) {
+      return { messages: data, meta: {} };
+    }
+    if (data && data.messages && Array.isArray(data.messages)) {
+      return { messages: data.messages, meta: data.meta || {} };
+    }
+    return { messages: [], meta: {} };
+  };
+
   const fetchAll = async () => {
     setLoading(true);
     try {
-      // 1) Projects owned by user
+      // Projects
       const projectsRes = await projectsAPI.getMine();
       const myProjects = projectsRes?.data || [];
-      setProjects(myProjects);
+      setProjects(Array.isArray(myProjects) ? myProjects : []);
 
-      // 2) Teams the user belongs to
+      // Teams
       const teamsRes = await teamsAPI.getMyTeams();
       const myTeams = teamsRes?.data || [];
-      setTeams(myTeams);
+      setTeams(Array.isArray(myTeams) ? myTeams : []);
 
-      // 3) Notifications
+      // Notifications (fetch page 1)
       let notifs = [];
       try {
-        const nRes = await notificationsAPI.getAll();
-        notifs = nRes?.data || [];
+        const nRes = await notificationsAPI.getAll({ page: 1, limit: 50 });
+        notifs = nRes?.data?.notifications || [];
+        if (!Array.isArray(notifs)) notifs = [];
       } catch (e) {
-        // notifications may be missing on backend; ignore but log
         console.warn('notifications fetch failed', e);
         notifs = [];
       }
       setNotifications(notifs);
 
-      // 4) Messages count: sum messages for each project (best-effort)
+      // Messages count
       let totalMessages = 0;
       try {
-        const msgsPromises = myProjects.map((p) =>
-          // messagesAPI.getByProject should return array
-          messagesAPI.getByProject(p._id).then((r) => r?.data?.length || 0).catch(() => 0)
+        const msgsPromises = (myProjects || []).map((p) =>
+          messagesAPI
+            .getByProject(p._id)
+            .then((r) => {
+              const { messages, meta } = normalizeMessagesResponse(r);
+              if (meta && typeof meta.total === 'number') return meta.total;
+              return Array.isArray(messages) ? messages.length : 0;
+            })
+            .catch(() => 0)
         );
         const msgsResults = await Promise.all(msgsPromises);
-        totalMessages = msgsResults.reduce((s, c) => s + c, 0);
+        totalMessages = msgsResults.reduce((s, c) => s + (Number(c) || 0), 0);
       } catch (e) {
         console.warn('messages fetch error', e);
         totalMessages = 0;
       }
       setMessagesCount(totalMessages);
 
-      // 5) Unique members across teams
+      // Unique members
       const memberIds = new Set();
-      myTeams.forEach((t) => {
+      (myTeams || []).forEach((t) => {
         (t.members || []).forEach((m) => {
-          if (m && m.user) memberIds.add(String(m.user._id || m.user));
+          const id = m?.user?._id || m?.user || m?._id || m;
+          if (id) memberIds.add(String(id));
         });
       });
       setUniqueMembersCount(memberIds.size);
 
-      // 6) Build recent activity: combine recent projects and notifications (by date)
+      // Recent activity
       const activities = [];
-
-      // From projects: creation events
-      myProjects.forEach((p) => {
+      (myProjects || []).forEach((p) => {
         activities.push({
           type: 'project',
-          title: `Project created: ${p.name}`,
+          title: `Project created: ${p.name || p.title || 'Untitled'}`,
           date: p.createdAt ? new Date(p.createdAt) : new Date(),
           meta: { projectId: p._id },
         });
       });
-
-      // From notifications: assume notifications have createdAt and message/ text fields
-      notifs.forEach((n) => {
+      (notifs || []).forEach((n) => {
         activities.push({
           type: 'notification',
           title: n.title || n.message || n.text || 'Notification',
@@ -92,16 +113,17 @@ const Dashboard = () => {
         });
       });
 
-      // From messages: optionally show last message per project (best-effort)
+      // From messages: show last message per project
       try {
-        const lastMsgPromises = myProjects.map((p) =>
-          messagesAPI.getByProject(p._id).then((r) => {
-            const msgs = r?.data || [];
-            if (msgs.length === 0) return null;
-            const last = msgs[msgs.length - 1];
+        const lastMsgPromises = (myProjects || []).map((p) =>
+          messagesAPI.getByProject(p._id, { limit: 1, page: 1 }).then((r) => {
+            const { messages } = normalizeMessagesResponse(r);
+            if (!Array.isArray(messages) || messages.length === 0) return null;
+            const last = messages[messages.length - 1] || messages[0];
+            const snippet = (last.content || last.meta?.snippet || '').toString();
             return {
               type: 'message',
-              title: `Message in ${p.name}: ${last.text?.slice(0, 80) || '...'}${last.text && last.text.length > 80 ? '...' : ''}`,
+              title: `Message in ${p.name || 'Project'}: ${snippet ? (snippet.slice(0, 80) + (snippet.length > 80 ? '...' : '')) : '...'}`,
               date: last.createdAt ? new Date(last.createdAt) : new Date(),
               meta: { projectId: p._id, messageId: last._id },
             };
@@ -112,17 +134,62 @@ const Dashboard = () => {
           if (lm) activities.push(lm);
         });
       } catch (e) {
-        // ignore
+        console.warn('error while fetching last messages', e);
       }
 
-      // sort by date desc and take top 6
-      activities.sort((a, b) => b.date - a.date);
-      setRecentActivity(activities.slice(0, 6));
+      activities.sort((a, b) => +new Date(b.date) - +new Date(a.date));
+      setRecentActivity(activities.slice(0, 100)); // keep last 100 items for scrolling
     } catch (err) {
       console.error('Dashboard fetchAll error', err);
       toast.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // MARK SINGLE NOTIFICATION AS READ (optimistic UI)
+  const handleMarkAsRead = async (id) => {
+    if (!id) return;
+    // Optimistically remove notification from UI
+    const prev = notifications;
+    const next = prev.filter((n) => String(n._id) !== String(id));
+    setNotifications(next);
+
+    try {
+      await notificationsAPI.markAsRead(id);
+      toast.success('Notification marked read');
+    } catch (err) {
+      // revert on error
+      console.warn('markAsRead failed', err);
+      setNotifications(prev);
+      toast.error('Failed to mark notification read');
+    }
+  };
+
+  // MARK ALL READ (optimistic)
+  const handleMarkAllRead = async () => {
+    if (!notifications || notifications.length === 0) return;
+    const prev = notifications;
+    setNotifications([]); // optimistic: clear UI
+
+    try {
+      await notificationsAPI.markAllRead();
+      toast.success('All notifications marked read');
+    } catch (err) {
+      console.warn('markAllRead failed', err);
+      setNotifications(prev);
+      toast.error('Failed to mark all read');
+    }
+  };
+
+  // Optionally, you can add a refresh function for notifications
+  const refreshNotifications = async () => {
+    try {
+      const nRes = await notificationsAPI.getAll({ page: 1, limit: 50 });
+      const notifs = nRes?.data?.notifications || [];
+      setNotifications(Array.isArray(notifs) ? notifs : []);
+    } catch (e) {
+      console.warn('refreshNotifications failed', e);
     }
   };
 
@@ -186,9 +253,24 @@ const Dashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recent Activity — scrollable */}
         <div className="bg-gray-50 p-6 rounded-lg">
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">Recent Activity</h2>
-          <div className="space-y-3">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-800">Recent Activity</h2>
+            <button
+              onClick={() => setRecentActivity([])}
+              className="text-sm text-gray-500 hover:text-gray-700"
+              title="Clear"
+            >
+              Clear
+            </button>
+          </div>
+
+          <div
+            tabIndex={0}
+            className="space-y-3 max-h-72 overflow-auto focus:outline-none p-1"
+            aria-label="Recent activity"
+          >
             {loading ? (
               <div className="text-gray-500">Loading activity...</div>
             ) : recentActivity.length === 0 ? (
@@ -196,10 +278,14 @@ const Dashboard = () => {
             ) : (
               recentActivity.map((act, i) => (
                 <div key={i} className="flex items-center space-x-3 p-3 bg-white rounded border">
-                  <div className={`w-2 h-2 rounded-full ${act.type === 'project' ? 'bg-blue-500' : act.type === 'notification' ? 'bg-orange-500' : 'bg-purple-500'}`} />
+                  <div
+                    className={`w-2 h-2 rounded-full ${
+                      act.type === 'project' ? 'bg-blue-500' : act.type === 'notification' ? 'bg-orange-500' : 'bg-purple-500'
+                    }`}
+                  />
                   <div>
                     <p className="text-sm font-medium">{act.title}</p>
-                    <p className="text-xs text-gray-500">{act.date.toLocaleString()}</p>
+                    <p className="text-xs text-gray-500">{act.date ? new Date(act.date).toLocaleString() : ''}</p>
                   </div>
                 </div>
               ))
@@ -207,27 +293,86 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {/* Notifications & Quick Actions */}
         <div className="bg-gray-50 p-6 rounded-lg">
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">Quick Actions</h2>
-          <div className="space-y-3">
-            <button
-              onClick={() => (window.location.href = '/projects')}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg transition-colors text-left"
-            >
-              🚀 Create New Project
-            </button>
-            <button
-              onClick={() => (window.location.href = '/teams')}
-              className="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-lg transition-colors text-left"
-            >
-              👥 Invite Team Member
-            </button>
-            <button
-              onClick={() => (window.location.href = '/chat')}
-              className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 px-4 rounded-lg transition-colors text-left"
-            >
-              💬 Start Chat
-            </button>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-800">Notifications</h2>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={refreshNotifications}
+                className="px-3 py-1 text-sm bg-white border rounded hover:bg-gray-100"
+              >
+                Refresh
+              </button>
+              <button
+                onClick={handleMarkAllRead}
+                className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                Mark all read
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-3 max-h-72 overflow-auto p-1">
+            {notifications.length === 0 ? (
+              <div className="text-gray-500">No notifications</div>
+            ) : (
+              notifications.map((n) => (
+                <div key={n._id} className="flex items-start justify-between p-3 bg-white rounded border">
+                  <div className="flex-1 pr-3">
+                    <p className="text-sm font-medium">{n.title}</p>
+                    <p className="text-xs text-gray-500">{n.body || n.meta?.summary || ''}</p>
+                    <p className="text-xs text-gray-400 mt-1">{n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}</p>
+                  </div>
+                  <div className="flex flex-col items-end space-y-2">
+                    <button
+                      onClick={() => handleMarkAsRead(n._id)}
+                      className="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+                    >
+                      Mark as read
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await notificationsAPI.deleteNotification(n._id);
+                          setNotifications((prev) => prev.filter((x) => x._id !== n._id));
+                          toast.success('Notification deleted');
+                        } catch (err) {
+                          toast.error('Delete failed');
+                        }
+                      }}
+                      className="px-2 py-1 text-xs text-red-600 border rounded hover:bg-red-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="mt-6">
+            <h3 className="text-sm font-medium text-gray-700 mb-2">Quick Actions</h3>
+            <div className="space-y-3">
+              <button
+                onClick={() => (window.location.href = '/projects')}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg transition-colors text-left"
+              >
+                🚀 Create New Project
+              </button>
+              <button
+                onClick={() => (window.location.href = '/teams')}
+                className="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-lg transition-colors text-left"
+              >
+                👥 Invite Team Member
+              </button>
+              <button
+                onClick={() => (window.location.href = '/chat')}
+                className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 px-4 rounded-lg transition-colors text-left"
+              >
+                💬 Start Chat
+              </button>
+            </div>
           </div>
         </div>
       </div>
