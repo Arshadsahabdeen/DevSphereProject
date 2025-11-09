@@ -37,6 +37,13 @@ export const authAPI = {
   getAllUsers: () => api.get('/api/users'),
 };
 
+/* ---------- Team Invites API ---------- */
+export const invitesAPI = {
+  send: (payload) => api.post("/api/invites/send", payload),
+  respond: (inviteId, action) => api.post(`/api/invites/${inviteId}/respond`, { action }),
+};
+
+
 /* ---------- Teams API ---------- */
 // Note: backend route for listing teams the user belongs to is /api/teams/my
 export const teamsAPI = {

@@ -17,6 +17,7 @@ import User from './models/User.js';
 import debugRoutes from './routes/debugRoutes.js';
 import socketManager from './utils/socketManager.js';
 import orgRoutes from "./routes/orgRoutes.js";
+import inviteRoutes from "./routes/inviteRoutes.js";
 
 dotenv.config();
 const app = express();
@@ -40,6 +41,8 @@ app.use('/api', messageRoutes);
 app.use('/api', notificationRoutes);
 app.use('/api/debug', debugRoutes);
 app.use("/api/organizations", orgRoutes);
+app.use("/api/invites", inviteRoutes);
+
 
 const server = http.createServer(app);
 const io = new Server(server, {

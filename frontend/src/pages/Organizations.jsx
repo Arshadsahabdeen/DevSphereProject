@@ -27,6 +27,21 @@ const Organizations = () => {
     fetchOrg();
   }, []);
 
+  const sendInvite = async () => {
+    const teamId = prompt("Enter the Team ID to invite:");
+    if (!teamId) return;
+    try {
+      const res = await organizationsAPI.sendTeamInvite({
+        orgId: organization._id,
+        teamId,
+      });
+      toast.success("Invite sent to team owner!");
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to send invite");
+    }
+  };
+
+
   const handleDelete = async () => {
     if (!window.confirm("Are you sure you want to delete this organization? This cannot be undone.")) return;
     try {
@@ -67,6 +82,16 @@ const Organizations = () => {
           </p>
         </div>
       )}
+      <div className="mt-6 border-t pt-4">
+        <h3 className="font-semibold mb-2">Add a Team to Organization</h3>
+        <button
+          onClick={() => sendInvite()}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
+        >
+          Send Team Invite
+        </button>
+      </div>
+
     </div>
   );
 };
